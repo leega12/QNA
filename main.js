@@ -96,20 +96,32 @@ function renderInitialView() {
     app.innerHTML = `
       <div class="initial-view">
           <div class="hero-card">
-              <h1 class="hero-title">계정 선택</h1>
-              <p class="hero-subtitle">학생 또는 선생님 계정으로 로그인하세요.</p>
+              <h1 class="hero-title">학습 Q&A 플랫폼</h1>
+              <p class="hero-subtitle">필요한 정보를 빠르게 찾고, 신뢰할 수 있는 답변을 받는 공간입니다.</p>
+              <div class="hero-features">
+                  <div class="hero-feature">명확한 질문 구조</div>
+                  <div class="hero-feature">신속한 답변 흐름</div>
+                  <div class="hero-feature">개인 질문 보호</div>
+              </div>
               <div class="button-container">
-                  <button class="btn btn-student">학생 계정</button>
-                  <button class="btn btn-teacher">선생님 계정</button>
+                  <button class="btn btn-student" data-action="student" aria-label="학생 계정 로그인">학생 계정</button>
+                  <span class="button-divider" aria-hidden="true">|</span>
+                  <button class="btn btn-teacher" data-action="teacher" aria-label="선생님 계정 로그인">선생님 계정</button>
               </div>
           </div>
-          <button class="admin-button">관리자 모드</button>
+          <button class="admin-button" data-action="admin">관리자 모드</button>
       </div>
     `;
 
-    app.querySelector('.btn-student').addEventListener('click', () => showLogin('student'));
-    app.querySelector('.btn-teacher').addEventListener('click', () => showLogin('teacher'));
-    app.querySelector('.admin-button').addEventListener('click', () => showLogin('admin'));
+    app.removeEventListener('click', handleInitialViewClick);
+    app.addEventListener('click', handleInitialViewClick);
+}
+
+function handleInitialViewClick(e) {
+    const action = e.target?.dataset?.action;
+    if (!action) return;
+    app.removeEventListener('click', handleInitialViewClick);
+    showLogin(action);
 }
 
 function showLogin(userType) {

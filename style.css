@@ -33,6 +33,7 @@ body {
     align-items: center;
     flex-direction: column;
     position: relative;
+    z-index: 0;
 }
 
 .hero-card {
@@ -43,6 +44,9 @@ body {
     box-shadow: var(--shadow-strong);
     text-align: center;
     backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
 }
 
 .hero-title {
@@ -58,10 +62,35 @@ body {
     font-size: 16px;
 }
 
+.hero-features {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+}
+
+.hero-feature {
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--muted-text-color);
+}
+
 .button-container {
     display: flex;
     flex-direction: row;
     gap: 30px;
+    align-items: center;
+}
+
+.button-divider {
+    color: var(--muted-text-color);
+    font-size: 20px;
+    font-weight: 300;
+    user-select: none;
 }
 
 .btn {
@@ -103,6 +132,7 @@ body {
     border-radius: 5px;
     cursor: pointer;
     box-shadow: var(--shadow-soft);
+    z-index: 2;
 }
 
 .app-shell {
@@ -163,8 +193,16 @@ body {
         flex-direction: column;
     }
 
+    .button-divider {
+        display: none;
+    }
+
     .hero-card {
         padding: 36px 24px;
         margin: 0 16px;
+    }
+
+    .hero-features {
+        margin-bottom: 20px;
     }
 }
