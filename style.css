@@ -1,58 +1,95 @@
 
 :root {
-    --primary-color: #4a90e2;
-    --secondary-color: #50e3c2;
-    --background-color: #f4f4f8;
-    --text-color: #333;
+    --primary-color: #3b82f6;
+    --secondary-color: #10b981;
+    --background-color: #f5f7fb;
+    --text-color: #1f2937;
+    --muted-text-color: #6b7280;
     --white: #fff;
-    --danger-color: #d0021b;
-    --font-family: 'Roboto', sans-serif;
+    --danger-color: #ef4444;
+    --surface-color: #ffffff;
+    --border-color: #e5e7eb;
+    --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.12);
+    --shadow-strong: 0 20px 40px rgba(15, 23, 42, 0.18);
+    --font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, sans-serif;
 }
 
 body {
     margin: 0;
     font-family: var(--font-family);
-    background-color: var(--background-color);
+    background: radial-gradient(circle at top, #ffffff 0%, #f0f4ff 45%, #eef2ff 100%);
     color: var(--text-color);
 }
 
 #app {
-    display: flex;
-    justify-content: center;
-    align-items: center;
     min-height: 100vh;
     position: relative;
 }
 
+.initial-view {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    position: relative;
+}
+
+.hero-card {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 44px 56px;
+    box-shadow: var(--shadow-strong);
+    text-align: center;
+    backdrop-filter: blur(10px);
+}
+
+.hero-title {
+    margin: 0 0 10px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+
+.hero-subtitle {
+    margin: 0 0 32px;
+    color: var(--muted-text-color);
+    font-size: 16px;
+}
+
 .button-container {
     display: flex;
-    flex-direction: column; /* Changed to column for vertical alignment */
-    gap: 20px;
+    flex-direction: row;
+    gap: 30px;
 }
 
 .btn {
-    padding: 20px 40px;
-    font-size: 24px;
+    padding: 24px 48px;
+    font-size: 22px;
+    min-width: 220px;
     border: none;
-    border-radius: 8px;
+    border-radius: 14px;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: var(--shadow-soft);
+    font-weight: 600;
+    letter-spacing: -0.2px;
 }
 
 .btn-student {
-    background-color: var(--primary-color);
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
     color: var(--white);
 }
 
 .btn-teacher {
-    background-color: var(--secondary-color);
+    background: linear-gradient(135deg, #10b981, #14b8a6);
     color: var(--white);
 }
 
 .btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-strong);
 }
 
 .admin-button {
@@ -61,16 +98,73 @@ body {
     right: 20px;
     padding: 8px 12px;
     font-size: 14px;
-    background-color: #ccc;
-    border: none;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+}
+
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 28px;
+}
+
+.app-brand {
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    font-size: 18px;
+}
+
+.app-content {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px 0 40px;
+}
+
+.btn-secondary {
+    padding: 10px 16px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+}
+
+.btn-danger {
+    padding: 10px 16px;
+    border: none;
+    background: var(--danger-color);
+    color: #fff;
+    border-radius: 6px;
     cursor: pointer;
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
     .btn {
-        padding: 15px 30px;
+        padding: 16px 20px;
         font-size: 20px;
+        min-width: 180px;
+    }
+
+    .button-container {
+        flex-direction: column;
+    }
+
+    .hero-card {
+        padding: 36px 24px;
+        margin: 0 16px;
     }
 }

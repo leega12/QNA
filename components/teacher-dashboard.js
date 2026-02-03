@@ -53,23 +53,25 @@ class TeacherDashboard extends HTMLElement {
                     width: 90%;
                     max-width: 1200px;
                     margin: 20px auto;
-                    padding: 20px;
-                    background: #fff;
-                    border-radius: 12px;
-                    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+                    padding: 28px;
+                    background: var(--surface-color, #fff);
+                    border-radius: 16px;
+                    border: 1px solid var(--border-color, #e5e7eb);
+                    box-shadow: var(--shadow-soft, 0 10px 30px rgba(15, 23, 42, 0.12));
                 }
                 h2 {
-                    color: var(--secondary-color, #50e3c2);
+                    color: var(--secondary-color, #10b981);
+                    margin-top: 0;
                 }
                 .question-list {
                     margin-top: 20px;
                 }
                 .question-item {
                     padding: 20px;
-                    border: 1px solid #eee;
-                    border-radius: 8px;
+                    border: 1px solid var(--border-color, #e5e7eb);
+                    border-radius: 12px;
                     margin-bottom: 20px;
-                    background: #f9f9f9;
+                    background: #f9fafb;
                 }
                 .question-header {
                     font-weight: bold;
@@ -78,20 +80,21 @@ class TeacherDashboard extends HTMLElement {
                 .answer-form textarea {
                     width: 100%;
                     padding: 10px;
-                    border-radius: 6px;
-                    border: 1px solid #ccc;
+                    border-radius: 10px;
+                    border: 1px solid var(--border-color, #e5e7eb);
                     box-sizing: border-box;
                     margin-bottom: 10px;
                 }
                  button {
                     padding: 10px 18px;
                     border: none;
-                    border-radius: 6px;
+                    border-radius: 10px;
                     color: #fff;
                     cursor: pointer;
+                    font-weight: 600;
                 }
                 .btn-submit {
-                     background-color: var(--secondary-color, #50e3c2);
+                     background: linear-gradient(135deg, #10b981, #14b8a6);
                 }
                 .student-name {
                     font-size: 0.9em;

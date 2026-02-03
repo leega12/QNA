@@ -5,6 +5,7 @@ class AdminDashboard extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         this.users = [];
         this.db = firebase.firestore();
+        this.secondaryAuth = null;
     }
 
     connectedCallback() {
@@ -20,12 +21,55 @@ class AdminDashboard extends HTMLElement {
     }
 
     attachEventListeners() {
+        const createForm = this.shadowRoot.querySelector('#create-user-form');
+        if (createForm) {
+            createForm.addEventListener('submit', this.createUser.bind(this));
+        }
+
         this.shadowRoot.querySelectorAll('.change-role').forEach(select => {
             select.addEventListener('change', this.changeUserRole.bind(this));
         });
         this.shadowRoot.querySelectorAll('.delete-user').forEach(button => {
             button.addEventListener('click', this.deleteUser.bind(this));
         });
+    }
+
+    getSecondaryAuth() {
+        if (this.secondaryAuth) return this.secondaryAuth;
+        let secondaryApp;
+        try {
+            secondaryApp = firebase.app('secondary');
+        } catch (error) {
+            secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
+        }
+        this.secondaryAuth = secondaryApp.auth();
+        return this.secondaryAuth;
+    }
+
+    async createUser(e) {
+        e.preventDefault();
+        const email = this.shadowRoot.querySelector('#new-email').value.trim();
+        const password = this.shadowRoot.querySelector('#new-password').value;
+        const role = this.shadowRoot.querySelector('#new-role').value;
+
+        if (!email || !password) {
+            alert('이메일과 비밀번호를 입력해 주세요.');
+            return;
+        }
+
+        try {
+            const secondaryAuth = this.getSecondaryAuth();
+            const userCredential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+            await this.db.collection('users').doc(userCredential.user.uid).set({
+                email: userCredential.user.email,
+                role
+            });
+            await secondaryAuth.signOut();
+            e.target.reset();
+            alert('계정이 생성되었습니다.');
+        } catch (error) {
+            alert(`계정 생성 실패: ${error.message}`);
+        }
     }
 
     async changeUserRole(e) {
@@ -52,18 +96,20 @@ class AdminDashboard extends HTMLElement {
                     width: 90%;
                     max-width: 1200px;
                     margin: 20px auto;
-                    padding: 20px;
-                    background: #fff;
-                    border-radius: 12px;
-                    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+                    padding: 28px;
+                    background: var(--surface-color, #fff);
+                    border-radius: 16px;
+                    border: 1px solid var(--border-color, #e5e7eb);
+                    box-shadow: var(--shadow-soft, 0 10px 30px rgba(15, 23, 42, 0.12));
                 }
                 h2 {
-                    color: var(--danger-color, #d0021b);
+                    color: var(--danger-color, #ef4444);
+                    margin-top: 0;
                 }
                 .admin-section {
                     margin-top: 30px;
                     padding-top: 20px;
-                    border-top: 1px solid #eee;
+                    border-top: 1px solid var(--border-color, #e5e7eb);
                 }
                 h3 {
                     margin-bottom: 20px;
@@ -74,26 +120,58 @@ class AdminDashboard extends HTMLElement {
                  }
                  .user-list th, .user-list td {
                     padding: 12px 15px;
-                    border-bottom: 1px solid #ddd;
+                    border-bottom: 1px solid var(--border-color, #e5e7eb);
                     text-align: left;
                  }
                  .user-list th {
-                    background-color: #f2f2f2;
+                    background-color: #f9fafb;
                  }
-                select, button {
+                input, select, button {
                     padding: 8px 12px;
-                    border-radius: 6px;
-                    border: 1px solid #ccc;
+                    border-radius: 10px;
+                    border: 1px solid var(--border-color, #e5e7eb);
                     margin-right: 10px;
                 }
+                #create-user-form {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    align-items: center;
+                }
+                #create-user-form button {
+                    background: linear-gradient(135deg, #3b82f6, #6366f1);
+                    border: none;
+                    color: #fff;
+                    font-weight: 600;
+                }
                 button.delete-user {
-                    background-color: var(--danger-color, #d0021b);
+                    background-color: var(--danger-color, #ef4444);
                     color: #fff;
                     border: none;
                 }
             </style>
             <div class="dashboard-container">
                 <h2>Admin Dashboard</h2>
+
+                <div class="admin-section">
+                    <h3>Create User</h3>
+                    <form id="create-user-form">
+                        <div>
+                            <input type="email" id="new-email" placeholder="Email" required>
+                        </div>
+                        <div>
+                            <input type="password" id="new-password" placeholder="Password" required>
+                        </div>
+                        <div>
+                            <select id="new-role">
+                                <option value="student">Student</option>
+                                <option value="teacher">Teacher</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit">Create Account</button>
+                    </form>
+                </div>
 
                 <div class="admin-section user-list">
                     <h3>Manage Users</h3>

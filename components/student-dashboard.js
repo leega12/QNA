@@ -64,13 +64,15 @@ class StudentDashboard extends HTMLElement {
                     width: 90%;
                     max-width: 1200px;
                     margin: 20px auto;
-                    padding: 20px;
-                    background: #fff;
-                    border-radius: 12px;
-                    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+                    padding: 28px;
+                    background: var(--surface-color, #fff);
+                    border-radius: 16px;
+                    border: 1px solid var(--border-color, #e5e7eb);
+                    box-shadow: var(--shadow-soft, 0 10px 30px rgba(15, 23, 42, 0.12));
                 }
                 h2 {
-                    color: var(--primary-color, #4a90e2);
+                    color: var(--primary-color, #3b82f6);
+                    margin-top: 0;
                 }
                 .question-form {
                     margin-bottom: 30px;
@@ -86,17 +88,18 @@ class StudentDashboard extends HTMLElement {
                 input[type="text"], select, textarea {
                     width: 100%;
                     padding: 10px;
-                    border-radius: 6px;
-                    border: 1px solid #ccc;
+                    border-radius: 10px;
+                    border: 1px solid var(--border-color, #e5e7eb);
                     box-sizing: border-box; 
                 }
                 button {
                     padding: 12px 20px;
                     border: none;
-                    border-radius: 6px;
-                    background-color: var(--primary-color, #4a90e2);
+                    border-radius: 10px;
+                    background: linear-gradient(135deg, #3b82f6, #6366f1);
                     color: #fff;
                     cursor: pointer;
+                    font-weight: 600;
                 }
                 .question-list {
                     border-top: 1px solid #eee;
@@ -104,7 +107,7 @@ class StudentDashboard extends HTMLElement {
                 }
                  .question-item {
                     padding: 15px;
-                    border-bottom: 1px solid #eee;
+                    border-bottom: 1px solid var(--border-color, #e5e7eb);
                 }
                  .question-item p:first-child {
                     font-weight: bold;
