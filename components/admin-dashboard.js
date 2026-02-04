@@ -136,137 +136,146 @@ class AdminDashboard extends HTMLElement {
         const statusEl = this.shadowRoot.querySelector('#upload-status');
         statusEl.innerHTML = '<p class="loading">파일을 읽는 중...</p>';
 
-        // Helper to add delay
         const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
         try {
+            // 1. 엑셀 파일 파싱
             const workbook = await this.readExcelFile(file);
             const usersToProcess = [];
+            const excelUserEmails = new Set();
 
-            // 1. 모든 시트에서 사용자 목록 수집
             for (const sheetName of workbook.SheetNames) {
                 const sheet = workbook.Sheets[sheetName];
                 const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                const rowIndexOffset = 1; // 1-based index for error reporting
+                const rowIndexOffset = 1;
 
                 for (let i = 1; i < data.length; i++) {
                     const row = data[i];
                     if (!row || row.length === 0) continue;
 
-                    let user = {
-                        email: '',
-                        role: 'student',
-                        info: {},
-                        source: `${sheetName} 시트, ${i + rowIndexOffset}행`
-                    };
+                    let user = { email: '', role: 'student', info: {}, source: `${sheetName} 시트, ${i + rowIndexOffset}행` };
 
                     try {
                         if (sheetName === '교사용') {
                             user.info.name = row[0] ? String(row[0]).trim() : '';
                             user.email = row[1];
                             user.role = 'teacher';
-                        } else if (sheetName === '1학년') {
-                            user.info.grade = parseInt(row[0]) || 1;
-                            user.info.classNum = parseInt(row[1]) || 0;
-                            user.info.number = parseInt(row[2]) || 0;
-                            user.info.name = row[3] ? String(row[3]).trim() : '';
-                            user.email = row[4];
-                        } else if (sheetName === '2학년' || sheetName === '3학년') {
-                            user.info.grade = sheetName === '2학년' ? 2 : 3;
-                            user.info.classNum = parseInt(row[0]) || 0;
-                            user.info.number = parseInt(row[1]) || 0;
-                            user.info.name = row[2] ? String(row[2]).trim() : '';
-                            user.email = row[3];
+                        } else if (['1학년', '2학년', '3학년'].includes(sheetName)) {
+                            user.info.grade = sheetName === '1학년' ? (parseInt(row[0]) || 1) : (sheetName === '2학년' ? 2 : 3);
+                            user.info.classNum = sheetName === '1학년' ? (parseInt(row[1]) || 0) : (parseInt(row[0]) || 0);
+                            user.info.number = sheetName === '1학년' ? (parseInt(row[2]) || 0) : (parseInt(row[1]) || 0);
+                            user.info.name = sheetName === '1학년' ? (row[3] ? String(row[3]).trim() : '') : (row[2] ? String(row[2]).trim() : '');
+                            user.email = sheetName === '1학년' ? row[4] : row[3];
                         } else {
-                            continue; // 다른 시트는 스킵
+                            continue;
                         }
 
-                        if (user.email === undefined || user.email === null || user.email === '') continue;
+                        if (!user.email) continue;
                         user.email = String(user.email).trim();
                         if (!user.email) continue;
-
-                        if (user.email.endsWith('@keisunghs')) {
-                            user.email += '.kr';
-                        }
+                        
+                        if (user.email.endsWith('@keisunghs')) user.email += '.kr';
                         if (!user.email.includes('@')) continue;
-
+                        
                         usersToProcess.push(user);
-
+                        excelUserEmails.add(user.email);
                     } catch (parseError) {
                         console.error(`Error parsing row: ${user.source}`, row, parseError);
                     }
                 }
             }
-            
-            statusEl.innerHTML = `<p class="loading">총 ${usersToProcess.length}개의 계정을 처리합니다...</p>`;
-            await delay(1000); // UI 업데이트를 위한 짧은 지연
+            statusEl.innerHTML = `<p class="loading">엑셀 파일에서 ${usersToProcess.length}명의 사용자를 찾았습니다.</p>`;
+            await delay(1000);
 
-            let totalSuccess = 0;
-            let totalFail = 0;
+            // 2. 기존 Firestore 사용자 목록 가져오기
+            statusEl.innerHTML = `<p class="loading">기존 사용자 목록을 불러오는 중...</p>`;
+            const studentSnapshot = await this.db.collection('users').where('role', '==', 'student').get();
+            const teacherSnapshot = await this.db.collection('users').where('role', '==', 'teacher').get();
+            const firestoreUsers = [...studentSnapshot.docs, ...teacherSnapshot.docs];
+
+            // 3. 삭제할 사용자 식별 (DB에는 있지만 엑셀에는 없는 사용자)
+            const usersToDelete = firestoreUsers.filter(doc => !excelUserEmails.has(doc.data().email));
+
+            let deletedCount = 0;
+            if (usersToDelete.length > 0) {
+                statusEl.innerHTML = `<p class="loading">기존 사용자 ${usersToDelete.length}명의 정보를 삭제하는 중...</p>`;
+                await delay(500);
+                
+                // Firestore 일괄 삭제 (500개씩 나눠서)
+                for (let i = 0; i < usersToDelete.length; i += 500) {
+                    const batch = this.db.batch();
+                    const chunk = usersToDelete.slice(i, i + 500);
+                    chunk.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                    deletedCount += chunk.length;
+                    statusEl.innerHTML = `<p class="loading">${deletedCount}/${usersToDelete.length}명 정보 삭제 완료...</p>`;
+                }
+            }
+
+            // 4. 엑셀 사용자 목록 순차적으로 생성/업데이트
+            statusEl.innerHTML = `<p class="loading">총 ${usersToProcess.length}개의 계정을 동기화합니다...</p>`;
+            let createdCount = 0;
+            let updatedCount = 0;
+            let failCount = 0;
             const errors = [];
-            let processedCount = 0;
-
-            // 2. 수집된 사용자 목록을 순차적으로 처리
-            for (const user of usersToProcess) {
-                processedCount++;
-                const progress = `(${processedCount}/${usersToProcess.length})`;
+            
+            for (let i = 0; i < usersToProcess.length; i++) {
+                const user = usersToProcess[i];
+                const progress = `(${i + 1}/${usersToProcess.length})`;
                 
                 try {
                     await this.createSingleUser(user.email, user.role, user.info);
-                    totalSuccess++;
-                    statusEl.innerHTML = `<p class="loading">처리 중... ${progress} ${user.email} 생성 성공</p>`;
+                    createdCount++;
+                    statusEl.innerHTML = `<p class="loading">생성: ${progress} ${user.email}</p>`;
                 } catch (error) {
                     if (error.code === 'auth/email-already-in-use') {
                         try {
                             const existing = await this.db.collection('users').where('email', '==', user.email).limit(1).get();
                             if (!existing.empty) {
                                 const docId = existing.docs[0].id;
-                                await this.db.collection('users').doc(docId).update({
-                                    role: user.role,
-                                    ...user.info
-                                });
-                                totalSuccess++; // 정보 업데이트도 성공으로 간주
-                                statusEl.innerHTML = `<p class="loading">처리 중... ${progress} ${user.email} 정보 업데이트</p>`;
+                                await this.db.collection('users').doc(docId).update({ role: user.role, ...user.info });
+                                updatedCount++;
+                                statusEl.innerHTML = `<p class="loading">업데이트: ${progress} ${user.email}</p>`;
                             } else {
-                                // Firestore에는 없는데 Auth에만 있는 경우, 에러로 처리
-                                totalFail++;
-                                const errorMessage = `[${user.source}] ${user.email}: Auth에 계정이 있지만 DB에 없습니다. 확인 필요.`;
-                                errors.push(errorMessage);
-                                console.error(errorMessage, error);
-                                statusEl.innerHTML = `<p class="error">오류 발생... ${progress} ${user.email}</p>`;
+                                // 엑셀에 있는데 DB에 없고 Auth에만 있는 경우, 새로 문서를 만들어준다.
+                                const secondaryAuth = this.getSecondaryAuth();
+                                const cred = await secondaryAuth.signInWithEmailAndPassword(user.email, this.DEFAULT_PASSWORD);
+                                await this.db.collection('users').doc(cred.user.uid).set({ email: user.email, role: user.role, ...user.info });
+                                await secondaryAuth.signOut();
+                                updatedCount++;
+                                statusEl.innerHTML = `<p class="loading">복구 및 업데이트: ${progress} ${user.email}</p>`;
                             }
                         } catch (updateError) {
-                            totalFail++;
-                            const errorMessage = `[${user.source}] ${user.email}: 정보 업데이트 실패.`;
+                            failCount++;
+                            const errorMessage = `[${user.source}] ${user.email}: 업데이트/복구 실패.`;
                             errors.push(errorMessage);
                             console.error(errorMessage, updateError);
-                            statusEl.innerHTML = `<p class="error">오류 발생... ${progress} ${user.email}</p>`;
                         }
                     } else {
-                        totalFail++;
-                        const errorMessage = `[${user.source}] ${user.email}: ${error.message}`;
+                        failCount++;
+                        const errorMessage = `[${user.source}] ${user.email}: 생성 실패 - ${error.message}`;
                         errors.push(errorMessage);
                         console.error(errorMessage, error);
-                        statusEl.innerHTML = `<p class="error">오류 발생... ${progress} ${user.email}</p>`;
                     }
                 }
-                
-                // 각 요청 사이에 200ms 지연 추가
-                await delay(200);
+                await delay(200); // API 과부하 방지 지연
             }
 
-            statusEl.innerHTML = `
-                <p class="success">완료: ${totalSuccess}개 계정 처리됨</p>
-                ${totalFail > 0 ? `<p class="error">실패: ${totalFail}개</p>` : ''}
-                ${errors.length > 0 ? `<details><summary>오류 상세 (${errors.length}건)</summary><pre>${errors.join('\n')}</pre></details>` : ''}
-            `;
+            // 5. 최종 결과 표시
+            let summary = `<p class="success">동기화 완료</p>`;
+            summary += `<p>새로 생성: ${createdCount}명, 정보 업데이트: ${updatedCount}명, 정보 삭제: ${deletedCount}명</p>`;
+            if (failCount > 0) {
+                 summary += `<p class="error">실패: ${failCount}건</p>`;
+                 summary += `<details><summary>오류 상세 (${errors.length}건)</summary><pre>${errors.join('\n')}</pre></details>`;
+            }
+            statusEl.innerHTML = summary;
 
             // 파일 입력 초기화
             const fileInput = this.shadowRoot.querySelector('#excel-file');
             if (fileInput) fileInput.value = '';
 
         } catch (error) {
-            statusEl.innerHTML = `<p class="error">파일 처리 오류: ${error.message}</p>`;
+            statusEl.innerHTML = `<p class="error">전체 프로세스 오류: ${error.message}</p>`;
             console.error('File processing error:', error);
         }
     }
