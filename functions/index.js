@@ -107,14 +107,16 @@ exports.processUserExcel = functions
             let deletedCount = 0;
             if (uidsToDelete.length > 0) {
                 await jobRef.update({ summary: `Deleting ${uidsToDelete.length} old users...` });
-                // Delete from Auth
-                const deleteResult = await auth.deleteUsers(uidsToDelete);
-                deletedCount = deleteResult.successCount;
-                
-                // Delete from Firestore in batches
+
                 for (let i = 0; i < uidsToDelete.length; i += BATCH_SIZE) {
-                    const batch = db.batch();
                     const chunk = uidsToDelete.slice(i, i + BATCH_SIZE);
+                    
+                    // Delete from Auth in batches
+                    const deleteResult = await auth.deleteUsers(chunk);
+                    deletedCount += deleteResult.successCount;
+                    
+                    // Delete from Firestore in batches
+                    const batch = db.batch();
                     chunk.forEach(uid => batch.delete(db.collection("users").doc(uid)));
                     await batch.commit();
                 }
@@ -146,25 +148,36 @@ exports.processUserExcel = functions
                 }
             }
 
-            // 5. Update Firestore and Custom Claims
+            // 5. Update Firestore and Custom Claims in batches
             await jobRef.update({ summary: "Updating user details in database..." });
-            const promises = [];
-            for (const user of excelUsers) {
-                const userRecord = await auth.getUserByEmail(user.email);
-                const { uid } = userRecord;
+            const AUTH_BATCH_SIZE = 100; // Batch size to avoid rate limits
 
-                // Set custom claims for role-based access control
-                promises.push(auth.setCustomUserClaims(uid, { role: user.role }));
+            for (let i = 0; i < excelUsers.length; i += AUTH_BATCH_SIZE) {
+                const chunk = excelUsers.slice(i, i + AUTH_BATCH_SIZE);
+                const promises = [];
                 
-                // Set user data in Firestore
-                const userDocRef = db.collection("users").doc(uid);
-                promises.push(userDocRef.set({
-                    email: user.email,
-                    role: user.role,
-                    ...user.info
-                }, { merge: true }));
+                await jobRef.update({ summary: `Updating details for users ${i + 1} to ${i + chunk.length}...` });
+
+                for (const user of chunk) {
+                    const processUser = async () => {
+                        const userRecord = await auth.getUserByEmail(user.email);
+                        const { uid } = userRecord;
+
+                        // Set custom claims for role-based access control
+                        await auth.setCustomUserClaims(uid, { role: user.role });
+                        
+                        // Set user data in Firestore
+                        const userDocRef = db.collection("users").doc(uid);
+                        await userDocRef.set({
+                            email: user.email,
+                            role: user.role,
+                            ...user.info
+                        }, { merge: true });
+                    };
+                    promises.push(processUser());
+                }
+                await Promise.all(promises);
             }
-            await Promise.all(promises);
             
             // 6. Final Report
             const summary = `Sync complete. Created: ${createdCount}, Updated: ${updatedCount}, Deleted: ${deletedCount}. Errors: ${importResult.failureCount}.`;
