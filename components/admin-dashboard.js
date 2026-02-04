@@ -186,9 +186,10 @@ class AdminDashboard extends HTMLElement {
                         email = row[3];
                     }
 
-                    if (!email || typeof email !== 'string') continue;
-                    email = email.toString().trim();
-                    if (!email) continue;
+                    // email이 없거나 빈 값이면 스킵
+                    if (email === undefined || email === null || email === '') continue;
+                    email = String(email).trim();
+                    if (!email || !email.includes('@')) continue;
 
                     try {
                         await this.createSingleUser(email, role);
