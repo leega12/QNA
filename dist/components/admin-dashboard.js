@@ -189,7 +189,14 @@ class AdminDashboard extends HTMLElement {
                     // email이 없거나 빈 값이면 스킵
                     if (email === undefined || email === null || email === '') continue;
                     email = String(email).trim();
-                    if (!email || !email.includes('@')) continue;
+                    if (!email) continue;
+
+                    // 이메일 형식 보완: @keisunghs -> @keisunghs.kr
+                    if (email.endsWith('@keisunghs')) {
+                        email = email + '.kr';
+                    }
+                    // @ 없으면 스킵
+                    if (!email.includes('@')) continue;
 
                     try {
                         await this.createSingleUser(email, role);
