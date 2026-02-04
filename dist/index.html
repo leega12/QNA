@@ -3,29 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>계성 Q&A | 학습 질의응답</title>
+    <meta name="description" content="계성고등학교 학습 질의응답 시스템">
 
-    <!-- SEO Meta Tags -->
-    <title>학습 Q&A 플랫폼 | 학생과 교사를 위한 실시간 질의응답 서비스</title>
-    <meta name="description" content="학생들의 학습 질문에 전문 교사가 신속하고 정확하게 답변해드립니다. 수학, 과학, 영어, 역사 등 다양한 과목의 궁금증을 해결하세요.">
-    <meta name="keywords" content="학습 Q&A, 학생 질문, 교사 답변, 온라인 학습, 실시간 질의응답, 교육 플랫폼, 수학 질문, 과학 질문">
-    <meta name="author" content="Q&A Academy">
-    <meta name="robots" content="index, follow">
-
-    <!-- Open Graph / Social Media -->
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="학습 Q&A 플랫폼 | 실시간 질의응답 서비스">
-    <meta property="og:description" content="학생들의 학습 질문에 전문 교사가 신속하고 정확하게 답변해드립니다.">
-    <meta property="og:site_name" content="Q&A Academy">
-
-    <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
 
-    <!-- Preconnect for performance -->
-    <link rel="preconnect" href="https://www.gstatic.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
-    <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="style.css">
@@ -35,29 +19,11 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
-    <!-- Structured Data for SEO -->
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "EducationalOrganization",
-        "name": "Q&A Academy",
-        "description": "학생과 교사를 위한 실시간 학습 질의응답 플랫폼",
-        "url": "https://keisungsw.web.app",
-        "sameAs": [],
-        "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://keisungsw.web.app/search?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-        }
-    }
-    </script>
+    <!-- SheetJS for Excel parsing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-    <!-- Skip Navigation for Accessibility -->
-    <a href="#main-content" class="skip-link">본문 바로가기</a>
-
-    <div id="app" role="application" aria-label="학습 Q&A 애플리케이션"></div>
-
+    <div id="app"></div>
     <script type="module" src="main.js"></script>
 </body>
 </html>
