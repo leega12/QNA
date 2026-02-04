@@ -3,10 +3,15 @@ class AdminDashboard extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
-        this.users = [];
+        this.students = [];
+        this.teachers = [];
         this.db = firebase.firestore();
         this.secondaryAuth = null;
         this.DEFAULT_PASSWORD = 'keisung1906';
+
+        // 학생 필터 상태
+        this.selectedGrade = '';
+        this.selectedClass = '';
     }
 
     connectedCallback() {
@@ -14,9 +19,10 @@ class AdminDashboard extends HTMLElement {
     }
 
     async fetchUsers() {
+        // 학생 목록
         this.db.collection('users').where('role', '==', 'student').onSnapshot(snapshot => {
-            this.users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            this.users.sort((a, b) => {
+            this.students = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            this.students.sort((a, b) => {
                 const aInfo = this.parseStudentInfo(a.email);
                 const bInfo = this.parseStudentInfo(b.email);
                 if (aInfo.grade !== bInfo.grade) return aInfo.grade - bInfo.grade;
@@ -26,11 +32,23 @@ class AdminDashboard extends HTMLElement {
             this.render();
             this.attachEventListeners();
         });
+
+        // 교사 목록
+        this.db.collection('users').where('role', '==', 'teacher').onSnapshot(snapshot => {
+            this.teachers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            this.teachers.sort((a, b) => {
+                const aName = this.parseTeacherName(a.email);
+                const bName = this.parseTeacherName(b.email);
+                return aName.localeCompare(bName, 'ko');
+            });
+            this.render();
+            this.attachEventListeners();
+        });
     }
 
     parseStudentInfo(email) {
-        // email format: 1101.홍길동@school.com -> 1학년 1반 01번 홍길동
         const localPart = email.split('@')[0];
+        // 형식: 1101.홍길동 -> 1학년 1반 01번 홍길동
         const match = localPart.match(/^(\d)(\d)(\d{2})\.(.+)$/);
         if (match) {
             return {
@@ -38,31 +56,81 @@ class AdminDashboard extends HTMLElement {
                 class: parseInt(match[2]),
                 number: parseInt(match[3]),
                 name: match[4],
-                display: `${match[1]}학년 ${match[2]}반 ${match[3]}번 ${match[4]}`
+                display: `${match[3]}. ${match[4]}`
             };
         }
         return { grade: 0, class: 0, number: 0, name: email, display: email };
     }
 
+    parseTeacherName(email) {
+        const localPart = email.split('@')[0];
+        return localPart;
+    }
+
     attachEventListeners() {
+        // 엑셀 파일 업로드
         const fileInput = this.shadowRoot.querySelector('#excel-file');
         if (fileInput) {
             fileInput.addEventListener('change', this.handleFileUpload.bind(this));
         }
 
-        const userSelect = this.shadowRoot.querySelector('#user-select');
-        if (userSelect) {
-            userSelect.addEventListener('change', this.handleUserSelect.bind(this));
+        // 학생 학년 선택
+        const gradeSelect = this.shadowRoot.querySelector('#grade-select');
+        if (gradeSelect) {
+            gradeSelect.addEventListener('change', (e) => {
+                this.selectedGrade = e.target.value;
+                this.selectedClass = '';
+                this.render();
+                this.attachEventListeners();
+            });
         }
 
-        const deleteBtn = this.shadowRoot.querySelector('#delete-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', this.deleteSelectedUser.bind(this));
+        // 학생 반 선택
+        const classSelect = this.shadowRoot.querySelector('#class-select');
+        if (classSelect) {
+            classSelect.addEventListener('change', (e) => {
+                this.selectedClass = e.target.value;
+                this.render();
+                this.attachEventListeners();
+            });
         }
 
-        const resetBtn = this.shadowRoot.querySelector('#reset-btn');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', this.resetPassword.bind(this));
+        // 학생 선택
+        const studentSelect = this.shadowRoot.querySelector('#student-select');
+        if (studentSelect) {
+            studentSelect.addEventListener('change', (e) => {
+                const btns = this.shadowRoot.querySelector('#student-actions');
+                btns.style.display = e.target.value ? 'flex' : 'none';
+            });
+        }
+
+        // 학생 삭제/초기화 버튼
+        const studentDeleteBtn = this.shadowRoot.querySelector('#student-delete-btn');
+        if (studentDeleteBtn) {
+            studentDeleteBtn.addEventListener('click', () => this.deleteUser('student'));
+        }
+        const studentResetBtn = this.shadowRoot.querySelector('#student-reset-btn');
+        if (studentResetBtn) {
+            studentResetBtn.addEventListener('click', () => this.resetUserPassword('student'));
+        }
+
+        // 교사 선택
+        const teacherSelect = this.shadowRoot.querySelector('#teacher-select');
+        if (teacherSelect) {
+            teacherSelect.addEventListener('change', (e) => {
+                const btns = this.shadowRoot.querySelector('#teacher-actions');
+                btns.style.display = e.target.value ? 'flex' : 'none';
+            });
+        }
+
+        // 교사 삭제/초기화 버튼
+        const teacherDeleteBtn = this.shadowRoot.querySelector('#teacher-delete-btn');
+        if (teacherDeleteBtn) {
+            teacherDeleteBtn.addEventListener('click', () => this.deleteUser('teacher'));
+        }
+        const teacherResetBtn = this.shadowRoot.querySelector('#teacher-reset-btn');
+        if (teacherResetBtn) {
+            teacherResetBtn.addEventListener('click', () => this.resetUserPassword('teacher'));
         }
     }
 
@@ -86,44 +154,67 @@ class AdminDashboard extends HTMLElement {
         statusEl.innerHTML = '<p class="loading">파일을 읽는 중...</p>';
 
         try {
-            const data = await this.readExcelFile(file);
-            if (data.length === 0) {
-                statusEl.innerHTML = '<p class="error">엑셀 파일에서 데이터를 찾을 수 없습니다.</p>';
-                return;
-            }
+            const workbook = await this.readExcelFile(file);
 
-            statusEl.innerHTML = `<p class="loading">총 ${data.length}개의 계정을 생성 중...</p>`;
-
-            let successCount = 0;
-            let failCount = 0;
+            let totalSuccess = 0;
+            let totalFail = 0;
             const errors = [];
 
-            for (const row of data) {
-                const email = row.email || row['이메일'] || row['아이디'] || row['Email'] || row['ID'];
-                if (!email) continue;
+            // 모든 시트 처리
+            for (const sheetName of workbook.SheetNames) {
+                const sheet = workbook.Sheets[sheetName];
+                const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-                const emailStr = email.toString().trim();
-                if (!emailStr) continue;
+                // 첫 행(헤더) 제외, A2부터 시작
+                for (let i = 1; i < data.length; i++) {
+                    const row = data[i];
+                    if (!row || row.length === 0) continue;
 
-                try {
-                    await this.createSingleUser(emailStr, 'student');
-                    successCount++;
-                } catch (error) {
-                    if (error.code !== 'auth/email-already-in-use') {
-                        failCount++;
-                        errors.push(`${emailStr}: ${error.message}`);
+                    let email = '';
+                    let role = 'student';
+
+                    if (sheetName === '교사용') {
+                        // 교사용: 이름, 아이디
+                        const name = row[0];
+                        email = row[1];
+                        role = 'teacher';
+                    } else if (sheetName === '1학년') {
+                        // 1학년: 학년, 반, 번호, 이름, 아이디
+                        email = row[4];
                     } else {
-                        successCount++; // 이미 있는 계정도 성공으로 처리
+                        // 2학년, 3학년: 반, 번호, 이름, 아이디
+                        email = row[3];
+                    }
+
+                    if (!email || typeof email !== 'string') continue;
+                    email = email.toString().trim();
+                    if (!email) continue;
+
+                    try {
+                        await this.createSingleUser(email, role);
+                        totalSuccess++;
+                        statusEl.innerHTML = `<p class="loading">처리 중... (${totalSuccess}개 완료)</p>`;
+                    } catch (error) {
+                        if (error.code === 'auth/email-already-in-use') {
+                            totalSuccess++;
+                        } else {
+                            totalFail++;
+                            errors.push(`${email}: ${error.message}`);
+                        }
                     }
                 }
             }
 
             statusEl.innerHTML = `
-                <p class="success">완료: ${successCount}개 계정 처리됨</p>
-                ${failCount > 0 ? `<p class="error">실패: ${failCount}개</p>` : ''}
+                <p class="success">완료: ${totalSuccess}개 계정 처리됨</p>
+                ${totalFail > 0 ? `<p class="error">실패: ${totalFail}개</p>` : ''}
                 ${errors.length > 0 ? `<details><summary>오류 상세</summary><pre>${errors.join('\n')}</pre></details>` : ''}
             `;
-            e.target.value = '';
+
+            // 파일 입력 초기화
+            const fileInput = this.shadowRoot.querySelector('#excel-file');
+            if (fileInput) fileInput.value = '';
+
         } catch (error) {
             statusEl.innerHTML = `<p class="error">파일 처리 오류: ${error.message}</p>`;
         }
@@ -136,9 +227,7 @@ class AdminDashboard extends HTMLElement {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-                    resolve(jsonData);
+                    resolve(workbook);
                 } catch (error) {
                     reject(error);
                 }
@@ -158,54 +247,75 @@ class AdminDashboard extends HTMLElement {
         await secondaryAuth.signOut();
     }
 
-    handleUserSelect(e) {
-        const actionBtns = this.shadowRoot.querySelector('.action-buttons');
-        if (e.target.value) {
-            actionBtns.style.display = 'flex';
-        } else {
-            actionBtns.style.display = 'none';
-        }
-    }
-
-    async deleteSelectedUser() {
-        const select = this.shadowRoot.querySelector('#user-select');
+    async deleteUser(type) {
+        const selectId = type === 'student' ? '#student-select' : '#teacher-select';
+        const select = this.shadowRoot.querySelector(selectId);
         const userId = select.value;
         if (!userId) return;
 
-        const user = this.users.find(u => u.id === userId);
-        const info = this.parseStudentInfo(user.email);
+        const user = type === 'student'
+            ? this.students.find(u => u.id === userId)
+            : this.teachers.find(u => u.id === userId);
 
-        if (confirm(`정말 "${info.display}" 계정을 삭제하시겠습니까?`)) {
+        const displayName = type === 'student'
+            ? this.parseStudentInfo(user.email).display
+            : this.parseTeacherName(user.email);
+
+        if (confirm(`정말 "${displayName}" 계정을 삭제하시겠습니까?`)) {
             try {
                 await this.db.collection('users').doc(userId).delete();
-                this.shadowRoot.querySelector('#manage-status').innerHTML =
-                    '<p class="success">계정이 삭제되었습니다.</p>';
-                select.value = '';
-                this.shadowRoot.querySelector('.action-buttons').style.display = 'none';
+                alert('계정이 삭제되었습니다.');
             } catch (error) {
-                this.shadowRoot.querySelector('#manage-status').innerHTML =
-                    `<p class="error">삭제 실패: ${error.message}</p>`;
+                alert(`삭제 실패: ${error.message}`);
             }
         }
     }
 
-    async resetPassword() {
-        const select = this.shadowRoot.querySelector('#user-select');
+    async resetUserPassword(type) {
+        const selectId = type === 'student' ? '#student-select' : '#teacher-select';
+        const select = this.shadowRoot.querySelector(selectId);
         const userId = select.value;
         if (!userId) return;
 
-        const user = this.users.find(u => u.id === userId);
-        const info = this.parseStudentInfo(user.email);
+        const user = type === 'student'
+            ? this.students.find(u => u.id === userId)
+            : this.teachers.find(u => u.id === userId);
 
-        if (confirm(`"${info.display}" 계정의 비밀번호를 초기화(${this.DEFAULT_PASSWORD})하시겠습니까?`)) {
-            this.shadowRoot.querySelector('#manage-status').innerHTML =
-                `<p class="info">비밀번호 초기화는 Firebase Admin SDK가 필요합니다.<br>
-                현재는 학생에게 비밀번호 재설정 이메일을 보내거나,<br>
-                계정을 삭제 후 다시 생성해주세요.</p>`;
-        }
+        const displayName = type === 'student'
+            ? this.parseStudentInfo(user.email).display
+            : this.parseTeacherName(user.email);
+
+        alert(`"${displayName}" 계정의 비밀번호 초기화:\n\n비밀번호 초기화는 Firebase Admin SDK가 필요합니다.\n현재는 계정을 삭제 후 다시 생성해주세요.`);
+    }
+
+    getGrades() {
+        const grades = [...new Set(this.students.map(s => this.parseStudentInfo(s.email).grade))];
+        return grades.filter(g => g > 0).sort((a, b) => a - b);
+    }
+
+    getClasses(grade) {
+        const classes = [...new Set(
+            this.students
+                .filter(s => this.parseStudentInfo(s.email).grade === parseInt(grade))
+                .map(s => this.parseStudentInfo(s.email).class)
+        )];
+        return classes.filter(c => c > 0).sort((a, b) => a - b);
+    }
+
+    getStudentsInClass(grade, classNum) {
+        return this.students.filter(s => {
+            const info = this.parseStudentInfo(s.email);
+            return info.grade === parseInt(grade) && info.class === parseInt(classNum);
+        });
     }
 
     render() {
+        const grades = this.getGrades();
+        const classes = this.selectedGrade ? this.getClasses(this.selectedGrade) : [];
+        const studentsInClass = (this.selectedGrade && this.selectedClass)
+            ? this.getStudentsInClass(this.selectedGrade, this.selectedClass)
+            : [];
+
         this.shadowRoot.innerHTML = `
             <style>
                 :host {
@@ -228,8 +338,14 @@ class AdminDashboard extends HTMLElement {
                 }
                 h2 {
                     margin: 0 0 8px;
-                    font-size: 20px;
+                    font-size: 18px;
                     color: #1f2937;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                h2 .icon {
+                    font-size: 20px;
                 }
                 .section-desc {
                     color: #6b7280;
@@ -251,15 +367,17 @@ class AdminDashboard extends HTMLElement {
                     background: #f0f9ff;
                 }
                 .upload-icon {
-                    font-size: 48px;
+                    font-size: 40px;
                     margin-bottom: 12px;
                 }
                 .upload-box p {
                     color: #6b7280;
-                    margin: 8px 0;
+                    margin: 6px 0;
+                    font-size: 14px;
                 }
-                .file-input-wrapper {
-                    margin-top: 16px;
+                .upload-box .hint {
+                    font-size: 12px;
+                    color: #9ca3af;
                 }
                 input[type="file"] {
                     display: none;
@@ -272,6 +390,7 @@ class AdminDashboard extends HTMLElement {
                     border-radius: 10px;
                     cursor: pointer;
                     font-weight: 600;
+                    margin-top: 12px;
                     transition: transform 0.2s;
                 }
                 .file-label:hover {
@@ -281,19 +400,38 @@ class AdminDashboard extends HTMLElement {
                     margin-top: 16px;
                 }
 
-                /* Manage Section */
+                /* Select Sections */
+                .select-row {
+                    display: flex;
+                    gap: 12px;
+                    margin-bottom: 16px;
+                }
+                .select-group {
+                    flex: 1;
+                }
+                .select-group label {
+                    display: block;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: #374151;
+                    margin-bottom: 6px;
+                }
                 select {
                     width: 100%;
-                    padding: 14px;
+                    padding: 12px;
                     border: 1px solid #e5e7eb;
                     border-radius: 10px;
-                    font-size: 15px;
+                    font-size: 14px;
                     background: #fff;
                     cursor: pointer;
                 }
                 select:focus {
                     outline: none;
                     border-color: #3b82f6;
+                }
+                select:disabled {
+                    background: #f3f4f6;
+                    cursor: not-allowed;
                 }
                 .action-buttons {
                     display: none;
@@ -324,26 +462,39 @@ class AdminDashboard extends HTMLElement {
                 .btn-warning:hover {
                     background: #d97706;
                 }
-                #manage-status {
-                    margin-top: 16px;
-                }
 
-                /* User List */
-                .user-count {
+                /* Stats */
+                .stats-row {
+                    display: flex;
+                    gap: 16px;
+                }
+                .stat-box {
+                    flex: 1;
                     background: #f0f9ff;
                     padding: 16px;
                     border-radius: 10px;
                     text-align: center;
+                }
+                .stat-box.green {
+                    background: #f0fdf4;
+                }
+                .stat-number {
+                    font-size: 24px;
+                    font-weight: 700;
                     color: #3b82f6;
-                    font-weight: 600;
+                }
+                .stat-box.green .stat-number {
+                    color: #10b981;
+                }
+                .stat-label {
+                    font-size: 13px;
+                    color: #6b7280;
                 }
 
                 /* Status Messages */
                 .success { color: #10b981; }
                 .error { color: #ef4444; }
-                .info { color: #3b82f6; line-height: 1.6; }
                 .loading { color: #6b7280; }
-
                 details {
                     margin-top: 12px;
                     font-size: 13px;
@@ -360,52 +511,106 @@ class AdminDashboard extends HTMLElement {
                     font-size: 12px;
                     margin-top: 8px;
                 }
+
+                @media (max-width: 600px) {
+                    .select-row {
+                        flex-direction: column;
+                    }
+                    .stats-row {
+                        flex-direction: column;
+                    }
+                }
             </style>
 
             <div class="dashboard">
                 <!-- Upload Section -->
                 <div class="section">
-                    <h2>학생 계정 일괄 등록</h2>
+                    <h2><span class="icon">📊</span> 계정 일괄 등록</h2>
                     <p class="section-desc">
-                        엑셀 파일(.xlsx)을 업로드하면 학생 계정이 자동으로 생성됩니다.<br>
+                        엑셀 파일을 업로드하면 학생/교사 계정이 자동으로 생성됩니다.<br>
                         초기 비밀번호: <strong>${this.DEFAULT_PASSWORD}</strong>
                     </p>
                     <div class="upload-box">
-                        <div class="upload-icon">📊</div>
-                        <p>엑셀 파일의 첫 번째 열에 이메일 주소가 있어야 합니다</p>
-                        <p>예: 1101.홍길동@school.com (1학년1반01번)</p>
-                        <div class="file-input-wrapper">
-                            <input type="file" id="excel-file" accept=".xlsx,.xls">
-                            <label for="excel-file" class="file-label">엑셀 파일 선택</label>
-                        </div>
+                        <div class="upload-icon">📁</div>
+                        <p><strong>시트별 형식:</strong></p>
+                        <p class="hint">1학년: 학년, 반, 번호, 이름, 아이디 (A2~)</p>
+                        <p class="hint">2학년/3학년: 반, 번호, 이름, 아이디 (A2~)</p>
+                        <p class="hint">교사용: 이름, 아이디 (A2~)</p>
+                        <input type="file" id="excel-file" accept=".xlsx,.xls">
+                        <label for="excel-file" class="file-label">엑셀 파일 선택</label>
                     </div>
                     <div id="upload-status"></div>
                 </div>
 
-                <!-- Manage Section -->
+                <!-- Student Management Section -->
                 <div class="section">
-                    <h2>학생 계정 관리</h2>
-                    <p class="section-desc">학생을 선택하여 계정을 삭제하거나 비밀번호를 초기화할 수 있습니다.</p>
+                    <h2><span class="icon">🎒</span> 학생 계정 관리</h2>
+                    <p class="section-desc">학년, 반을 선택한 후 학생을 선택하세요.</p>
 
-                    <select id="user-select">
-                        <option value="">학생 선택...</option>
-                        ${this.users.map(user => {
-                            const info = this.parseStudentInfo(user.email);
-                            return `<option value="${user.id}">${info.display}</option>`;
-                        }).join('')}
-                    </select>
-
-                    <div class="action-buttons">
-                        <button class="btn btn-danger" id="delete-btn">계정 삭제</button>
-                        <button class="btn btn-warning" id="reset-btn">비밀번호 초기화</button>
+                    <div class="select-row">
+                        <div class="select-group">
+                            <label>학년</label>
+                            <select id="grade-select">
+                                <option value="">학년 선택</option>
+                                ${grades.map(g => `
+                                    <option value="${g}" ${this.selectedGrade == g ? 'selected' : ''}>${g}학년</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="select-group">
+                            <label>반</label>
+                            <select id="class-select" ${!this.selectedGrade ? 'disabled' : ''}>
+                                <option value="">반 선택</option>
+                                ${classes.map(c => `
+                                    <option value="${c}" ${this.selectedClass == c ? 'selected' : ''}>${c}반</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="select-group">
+                            <label>학생</label>
+                            <select id="student-select" ${!this.selectedClass ? 'disabled' : ''}>
+                                <option value="">학생 선택</option>
+                                ${studentsInClass.map(s => {
+                                    const info = this.parseStudentInfo(s.email);
+                                    return `<option value="${s.id}">${info.display}</option>`;
+                                }).join('')}
+                            </select>
+                        </div>
                     </div>
-                    <div id="manage-status"></div>
+                    <div class="action-buttons" id="student-actions">
+                        <button class="btn btn-danger" id="student-delete-btn">계정 삭제</button>
+                        <button class="btn btn-warning" id="student-reset-btn">비밀번호 초기화</button>
+                    </div>
+                </div>
+
+                <!-- Teacher Management Section -->
+                <div class="section">
+                    <h2><span class="icon">👨‍🏫</span> 교사 계정 관리</h2>
+                    <p class="section-desc">교사를 선택하여 계정을 관리하세요.</p>
+
+                    <select id="teacher-select">
+                        <option value="">교사 선택</option>
+                        ${this.teachers.map(t => `
+                            <option value="${t.id}">${this.parseTeacherName(t.email)}</option>
+                        `).join('')}
+                    </select>
+                    <div class="action-buttons" id="teacher-actions">
+                        <button class="btn btn-danger" id="teacher-delete-btn">계정 삭제</button>
+                        <button class="btn btn-warning" id="teacher-reset-btn">비밀번호 초기화</button>
+                    </div>
                 </div>
 
                 <!-- Stats Section -->
                 <div class="section">
-                    <div class="user-count">
-                        등록된 학생 수: ${this.users.length}명
+                    <div class="stats-row">
+                        <div class="stat-box">
+                            <div class="stat-number">${this.students.length}</div>
+                            <div class="stat-label">등록된 학생</div>
+                        </div>
+                        <div class="stat-box green">
+                            <div class="stat-number">${this.teachers.length}</div>
+                            <div class="stat-label">등록된 교사</div>
+                        </div>
                     </div>
                 </div>
             </div>
