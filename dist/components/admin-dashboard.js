@@ -23,11 +23,15 @@ class AdminDashboard extends HTMLElement {
         this.db.collection('users').where('role', '==', 'student').onSnapshot(snapshot => {
             this.students = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             this.students.sort((a, b) => {
-                const aInfo = this.parseStudentInfo(a.email);
-                const bInfo = this.parseStudentInfo(b.email);
-                if (aInfo.grade !== bInfo.grade) return aInfo.grade - bInfo.grade;
-                if (aInfo.class !== bInfo.class) return aInfo.class - bInfo.class;
-                return aInfo.number - bInfo.number;
+                const aGrade = a.grade || 0;
+                const bGrade = b.grade || 0;
+                const aClass = a.classNum || 0;
+                const bClass = b.classNum || 0;
+                const aNum = a.number || 0;
+                const bNum = b.number || 0;
+                if (aGrade !== bGrade) return aGrade - bGrade;
+                if (aClass !== bClass) return aClass - bClass;
+                return aNum - bNum;
             });
             this.render();
             this.attachEventListeners();
@@ -37,34 +41,13 @@ class AdminDashboard extends HTMLElement {
         this.db.collection('users').where('role', '==', 'teacher').onSnapshot(snapshot => {
             this.teachers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             this.teachers.sort((a, b) => {
-                const aName = this.parseTeacherName(a.email);
-                const bName = this.parseTeacherName(b.email);
+                const aName = a.name || a.email;
+                const bName = b.name || b.email;
                 return aName.localeCompare(bName, 'ko');
             });
             this.render();
             this.attachEventListeners();
         });
-    }
-
-    parseStudentInfo(email) {
-        const localPart = email.split('@')[0];
-        // 형식: 1101.홍길동 -> 1학년 1반 01번 홍길동
-        const match = localPart.match(/^(\d)(\d)(\d{2})\.(.+)$/);
-        if (match) {
-            return {
-                grade: parseInt(match[1]),
-                class: parseInt(match[2]),
-                number: parseInt(match[3]),
-                name: match[4],
-                display: `${match[3]}. ${match[4]}`
-            };
-        }
-        return { grade: 0, class: 0, number: 0, name: email, display: email };
-    }
-
-    parseTeacherName(email) {
-        const localPart = email.split('@')[0];
-        return localPart;
     }
 
     attachEventListeners() {
@@ -172,18 +155,40 @@ class AdminDashboard extends HTMLElement {
 
                     let email = '';
                     let role = 'student';
+                    let grade = 0;
+                    let classNum = 0;
+                    let number = 0;
+                    let name = '';
 
                     if (sheetName === '교사용') {
                         // 교사용: 이름, 아이디
-                        const name = row[0];
+                        name = row[0] ? String(row[0]).trim() : '';
                         email = row[1];
                         role = 'teacher';
                     } else if (sheetName === '1학년') {
                         // 1학년: 학년, 반, 번호, 이름, 아이디
+                        grade = parseInt(row[0]) || 1;
+                        classNum = parseInt(row[1]) || 0;
+                        number = parseInt(row[2]) || 0;
+                        name = row[3] ? String(row[3]).trim() : '';
                         email = row[4];
-                    } else {
-                        // 2학년, 3학년: 반, 번호, 이름, 아이디
+                    } else if (sheetName === '2학년') {
+                        // 2학년: 반, 번호, 이름, 아이디
+                        grade = 2;
+                        classNum = parseInt(row[0]) || 0;
+                        number = parseInt(row[1]) || 0;
+                        name = row[2] ? String(row[2]).trim() : '';
                         email = row[3];
+                    } else if (sheetName === '3학년') {
+                        // 3학년: 반, 번호, 이름, 아이디
+                        grade = 3;
+                        classNum = parseInt(row[0]) || 0;
+                        number = parseInt(row[1]) || 0;
+                        name = row[2] ? String(row[2]).trim() : '';
+                        email = row[3];
+                    } else {
+                        // 다른 시트는 스킵
+                        continue;
                     }
 
                     // email이 없거나 빈 값이면 스킵
@@ -199,11 +204,26 @@ class AdminDashboard extends HTMLElement {
                     if (!email.includes('@')) continue;
 
                     try {
-                        await this.createSingleUser(email, role);
+                        await this.createSingleUser(email, role, { grade, classNum, number, name });
                         totalSuccess++;
                         statusEl.innerHTML = `<p class="loading">처리 중... (${totalSuccess}개 완료)</p>`;
                     } catch (error) {
                         if (error.code === 'auth/email-already-in-use') {
+                            // 이미 존재하는 계정이면 정보 업데이트
+                            try {
+                                const existing = await this.db.collection('users')
+                                    .where('email', '==', email)
+                                    .limit(1)
+                                    .get();
+                                if (!existing.empty) {
+                                    const docId = existing.docs[0].id;
+                                    await this.db.collection('users').doc(docId).update({
+                                        grade, classNum, number, name, role
+                                    });
+                                }
+                            } catch (updateError) {
+                                console.warn('Failed to update existing user:', updateError);
+                            }
                             totalSuccess++;
                         } else {
                             totalFail++;
@@ -245,13 +265,26 @@ class AdminDashboard extends HTMLElement {
         });
     }
 
-    async createSingleUser(email, role) {
+    async createSingleUser(email, role, info = {}) {
         const secondaryAuth = this.getSecondaryAuth();
         const userCredential = await secondaryAuth.createUserWithEmailAndPassword(email, this.DEFAULT_PASSWORD);
-        await this.db.collection('users').doc(userCredential.user.uid).set({
+
+        const userData = {
             email: userCredential.user.email,
             role: role
-        });
+        };
+
+        // 학생 정보 추가
+        if (role === 'student') {
+            userData.grade = info.grade || 0;
+            userData.classNum = info.classNum || 0;
+            userData.number = info.number || 0;
+            userData.name = info.name || '';
+        } else if (role === 'teacher') {
+            userData.name = info.name || '';
+        }
+
+        await this.db.collection('users').doc(userCredential.user.uid).set(userData);
         await secondaryAuth.signOut();
     }
 
@@ -266,8 +299,8 @@ class AdminDashboard extends HTMLElement {
             : this.teachers.find(u => u.id === userId);
 
         const displayName = type === 'student'
-            ? this.parseStudentInfo(user.email).display
-            : this.parseTeacherName(user.email);
+            ? `${user.number}. ${user.name}`
+            : (user.name || user.email);
 
         if (confirm(`정말 "${displayName}" 계정을 삭제하시겠습니까?`)) {
             try {
@@ -290,31 +323,31 @@ class AdminDashboard extends HTMLElement {
             : this.teachers.find(u => u.id === userId);
 
         const displayName = type === 'student'
-            ? this.parseStudentInfo(user.email).display
-            : this.parseTeacherName(user.email);
+            ? `${user.number}. ${user.name}`
+            : (user.name || user.email);
 
         alert(`"${displayName}" 계정의 비밀번호 초기화:\n\n비밀번호 초기화는 Firebase Admin SDK가 필요합니다.\n현재는 계정을 삭제 후 다시 생성해주세요.`);
     }
 
     getGrades() {
-        const grades = [...new Set(this.students.map(s => this.parseStudentInfo(s.email).grade))];
-        return grades.filter(g => g > 0).sort((a, b) => a - b);
+        const grades = [...new Set(this.students.map(s => s.grade).filter(g => g > 0))];
+        return grades.sort((a, b) => a - b);
     }
 
     getClasses(grade) {
         const classes = [...new Set(
             this.students
-                .filter(s => this.parseStudentInfo(s.email).grade === parseInt(grade))
-                .map(s => this.parseStudentInfo(s.email).class)
+                .filter(s => s.grade === parseInt(grade))
+                .map(s => s.classNum)
+                .filter(c => c > 0)
         )];
-        return classes.filter(c => c > 0).sort((a, b) => a - b);
+        return classes.sort((a, b) => a - b);
     }
 
     getStudentsInClass(grade, classNum) {
-        return this.students.filter(s => {
-            const info = this.parseStudentInfo(s.email);
-            return info.grade === parseInt(grade) && info.class === parseInt(classNum);
-        });
+        return this.students.filter(s =>
+            s.grade === parseInt(grade) && s.classNum === parseInt(classNum)
+        );
     }
 
     render() {
@@ -541,9 +574,9 @@ class AdminDashboard extends HTMLElement {
                     <div class="upload-box">
                         <div class="upload-icon">📁</div>
                         <p><strong>시트별 형식:</strong></p>
-                        <p class="hint">1학년: 학년, 반, 번호, 이름, 아이디 (A2~)</p>
-                        <p class="hint">2학년/3학년: 반, 번호, 이름, 아이디 (A2~)</p>
-                        <p class="hint">교사용: 이름, 아이디 (A2~)</p>
+                        <p class="hint">1학년: 학년, 반, 번호, 이름, 아이디</p>
+                        <p class="hint">2학년/3학년: 반, 번호, 이름, 아이디</p>
+                        <p class="hint">교사용: 이름, 아이디</p>
                         <input type="file" id="excel-file" accept=".xlsx,.xls">
                         <label for="excel-file" class="file-label">엑셀 파일 선택</label>
                     </div>
@@ -578,10 +611,9 @@ class AdminDashboard extends HTMLElement {
                             <label>학생</label>
                             <select id="student-select" ${!this.selectedClass ? 'disabled' : ''}>
                                 <option value="">학생 선택</option>
-                                ${studentsInClass.map(s => {
-                                    const info = this.parseStudentInfo(s.email);
-                                    return `<option value="${s.id}">${info.display}</option>`;
-                                }).join('')}
+                                ${studentsInClass.map(s => `
+                                    <option value="${s.id}">${String(s.number).padStart(2, '0')}. ${s.name}</option>
+                                `).join('')}
                             </select>
                         </div>
                     </div>
@@ -599,7 +631,7 @@ class AdminDashboard extends HTMLElement {
                     <select id="teacher-select">
                         <option value="">교사 선택</option>
                         ${this.teachers.map(t => `
-                            <option value="${t.id}">${this.parseTeacherName(t.email)}</option>
+                            <option value="${t.id}">${t.name || t.email}</option>
                         `).join('')}
                     </select>
                     <div class="action-buttons" id="teacher-actions">
